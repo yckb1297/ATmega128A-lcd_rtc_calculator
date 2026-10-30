@@ -26,13 +26,8 @@ uint8_t initial_time_arr[7] = {
 
 void init_ds1307(void)
 {
-	init_i2c();
-	rtc_sec = 48;	rtc_min = 58;	rtc_hour = 11;
-	rtc_date = 2;	rtc_month = 7;	rtc_year = 26;
-	
-	ds1307_set_time();
-	
-	return;
+	/* Preserve the battery-backed time on normal startup. */
+	ds1307_read_time();
 }
 
 void ds1307_set_time(void)

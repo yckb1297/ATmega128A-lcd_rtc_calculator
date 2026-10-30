@@ -10,6 +10,7 @@
 #include <util/delay.h>
 #include <avr/interrupt.h>	//interrupt 라이브러리. sei 등의 함수가 포함됨.
 #include <stdio.h>
+#include <util/atomic.h>
 
 #include "queue.h"
 #include "button.h"
@@ -52,6 +53,17 @@ volatile uint32_t keypad_counter = 0;
 volatile uint16_t ms_count = 0;
 volatile uint16_t sec_count = 0;
 
+static uint16_t read_seconds(void)
+{
+	uint16_t value;
+	ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+	{
+		value = sec_count;
+	}
+	return value;
+}
+
+
 int edit_idx = YEAR_IDX;              // 0:년, 1:월, 2:일, 4:시, 5:분, 6:초
 
 static int blink_timer = 0;
@@ -84,7 +96,7 @@ ISR(TIMER0_OVF_vect)
 
 int main(void)
 {
-	static uint8_t prev_sec_count = 0;
+	uint16_t prev_sec_count = 0;
 	uint8_t key_value = 0;
 	uint8_t button_val = 0;
 	int button3_state = 0;
@@ -109,6 +121,8 @@ int main(void)
 			current_state = (current_state == STATE_RTC) ? STATE_CALC : STATE_RTC;
 			lcd_clear();
 			_delay_ms(100);
+			if (current_state == STATE_CALC)
+				prev_sec_count = read_seconds();
 		}
 		
 		switch(current_state)
@@ -220,15 +234,15 @@ int main(void)
 				
 				if(input_detected)
 				{
-					prev_sec_count = sec_count;
+					prev_sec_count = read_seconds();
 				}
 				else
 				{
 					
-					if(sec_count > prev_sec_count + 10)
+					if((uint16_t)(read_seconds() - prev_sec_count) >= 10U)
 					{
 						current_state = STATE_RTC;
-						prev_sec_count = sec_count;
+						prev_sec_count = read_seconds();
 						lcd_clear();
 						_delay_ms(10);
 					}

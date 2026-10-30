@@ -13,6 +13,9 @@ static int index = 0;
 
 void save_equation(uint8_t key_val)	//배열에 식을 저장
 {
+	/* Reserve space for '=' and the terminating NUL. */
+	if (index >= (int)sizeof(expr) - 2 && key_val != '=' && key_val != '=' && key_val != 'c' && key_val != ' ')
+		return;
 	expr[index++] = key_val;	//입력한 키에 매핑된 값이 저장됨
 	
 	lcd_write_data(key_val);
@@ -58,10 +61,18 @@ void save_equation(uint8_t key_val)	//배열에 식을 저장
 	{
 		expr[index] = '\0';		//마지막 인덱스에 null삽입
 		
+		if (parsing(expr))
+		{
+			lcd_clear();
+			lcd_write_string("Bracket ERROR !!");
+			index = 0;
+			expr[0] = '\0';
+			return;
+		}
 		init(&s);
 		
 		char** postfix = trans(&s, expr);
-		char* cal_res = calculate(&s, postfix);
+		char* cal_res = postfix ? calculate(&s, postfix) : "ERR";
 
 		lcd_goto_xy(1, 12);
 		_delay_us(50);
@@ -70,20 +81,22 @@ void save_equation(uint8_t key_val)	//배열에 식을 저장
 			_delay_us(50);
 		}
 		
-		if(parsing(expr)) 
+		if (postfix != NULL)
 		{
-			lcd_clear();
-			lcd_write_string("Bracket ERROR !!");
+			for (int i = 0; postfix[i] != NULL; i++)
+				free(postfix[i]);
+			free(postfix);
 		}
-		free(postfix);
 		index = 0;
+		expr[0] = '\0';
 	}
 	
 }
 
 char **trans(stack* s, char* expr)  //식을 후위표기법으로 변환
 {  
-	char** res_arr = (char**)malloc(sizeof(char*) * 200);
+	char** res_arr = (char**)calloc(200, sizeof(char*));
+	if (res_arr == NULL) return NULL;
 	int res_idx = 0;
 	int i = 0;
 	int len = strlen(expr);
@@ -95,7 +108,8 @@ char **trans(stack* s, char* expr)  //식을 후위표기법으로 변환
 		//연속된 숫자를 하나의 문자열로 묶기
 		if(isdigit(expr[i]))		//isdigit: 숫자가 아니면 0 반환.
 		{
-			char* num = (char*)malloc(sizeof(char) * 20);
+			char* num = (char*)malloc((size_t)len + 1);
+			if (num == NULL) goto allocation_failed;
 			int num_idx = 0;
 			
 			while (i < len && (isdigit(expr[i])))
@@ -107,6 +121,7 @@ char **trans(stack* s, char* expr)  //식을 후위표기법으로 변환
 		}
 		
 		char* op = (char*)malloc(sizeof(char) * 2);	//읽은 연산자 문자를 독립된 문자열로 새로 포장
+		if (op == NULL) goto allocation_failed;
 		op[0] = expr[i];
 		op[1] = '\0';
 		
@@ -149,6 +164,12 @@ char **trans(stack* s, char* expr)  //식을 후위표기법으로 변환
 	
 	res_arr[res_idx] = NULL;	//끝자리에 null 지정
 	return res_arr;
+
+allocation_failed:
+	while (!is_empty(s)) free(pop(s));
+	for (int j = 0; j < res_idx; j++) free(res_arr[j]);
+	free(res_arr);
+	return NULL;
 }
 
 char *calculate(stack* s, char** postfix) 
@@ -160,34 +181,44 @@ char *calculate(stack* s, char** postfix)
 	{
 		if(isdigit(postfix[i][0]))
 		{
-			num_stackarr[++num_top] = atoi(postfix[i]);
+			errno = 0;
+			char *end;
+			long value = strtol(postfix[i], &end, 10);
+			if (errno == ERANGE || *end != '\0' ||
+			    value < INT_MIN || value > INT_MAX || num_top >= 99)
+				return "ERR";
+			num_stackarr[++num_top] = (int)value;
 		}
 		
 		else
 		{			
+			if (num_top < 1) return "ERR";
 			int num2 = num_stackarr[num_top--];
 			int num1 = num_stackarr[num_top--];
-			int res = 0;
+			long res = 0;
 	
 			switch(postfix[i][0]) 
 			{
-				case '+': res = num1 + num2; break;
-				case '-': res = num1 - num2; break;
-				case '*': res = num1 * num2; break;
+				case '+': res = (long)num1 + num2; break;
+				case '-': res = (long)num1 - num2; break;
+				case '*': res = (long)num1 * num2; break;
 				case '/': 
 					if(num2 == 0) return "ERR";
-					res = num1 / num2; 
+					res = (long)num1 / num2;
 					break;
+				default: return "ERR";
 			}
 			
-			num_stackarr[++num_top] = res;
+			if (res < INT_MIN || res > INT_MAX) return "ERR";
+			num_stackarr[++num_top] = (int)res;
 		}
 	}
 	
+	if (num_top != 0) return "ERR";
 	int fin_num = num_stackarr[num_top];
 
-	char* cal_res = (char*)malloc(sizeof(char) * 20);
-	sprintf(cal_res, "%d", fin_num);
+	static char cal_res[20];
+	snprintf(cal_res, sizeof(cal_res), "%d", fin_num);
 	
 	return cal_res;
 }
@@ -241,23 +272,13 @@ int getPriority(char op) //연산자 우선순위
 
 int parsing(char *buff)
 {
-
 	int count = 0;
-	int len = strlen(buff);
-
-	for (int i = 0; i < len; i++) {
-		if (buff[i] == '(') {
-			count++;
-		}
-		if (buff[i] == ')') {
-			count--;
-		}
+	for (int i = 0; buff[i] != '\0'; i++)
+	{
+		if (buff[i] == '(') count++;
+		else if (buff[i] == ')' && --count < 0) return 1;
 	}
-
-	if (count != 0) {
-		return 1;
-	}
-	return 0;
+	return count != 0;
 }
 
 #if 0

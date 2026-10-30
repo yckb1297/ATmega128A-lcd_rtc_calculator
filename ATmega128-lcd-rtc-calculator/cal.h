@@ -12,6 +12,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <ctype.h>
+#include <limits.h>
+#include <errno.h>
 
 #define MAX_STACK_SIZE 100
 
