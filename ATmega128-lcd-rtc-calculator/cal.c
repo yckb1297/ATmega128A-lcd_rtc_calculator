@@ -11,44 +11,44 @@
 static char expr[100];
 static int index = 0;
 
-void save_equation(uint8_t key_val)	//배열에 식을 저장
+void save_equation(uint8_t key_val) // 입력 키를 수식에 반영하고 '=' 입력 시 계산
 {
-	/* Reserve space for '=' and the terminating NUL. */
+	/* 일반 문자 입력 시 '='와 문자열 종료 문자 공간을 남긴다. */
 	if (index >= (int)sizeof(expr) - 2 && key_val != '=' && key_val != '=' && key_val != 'c' && key_val != ' ')
 		return;
-	expr[index++] = key_val;	//입력한 키에 매핑된 값이 저장됨
+	expr[index++] = key_val; // 키패드/버튼 입력을 수식 버퍼에 저장
 	
 	lcd_write_data(key_val);
 	
-	if(key_val == ' ')	//공백 키버튼 누르면 back space
+	if(key_val == ' ') // 공백 키는 직전 문자 삭제로 처리
 	{
-		if(index >=2)	//버퍼에 값이 존재할 때
+		if(index >=2) // 삭제할 문자가 있을 때
 		{
-			index -= 2;	//입력한 공백과 직전 글자 2개 무료화
-			expr[index] = '\0'; //버퍼 끝 널 삽입
+			index -= 2; // 방금 넣은 공백과 직전 문자를 버퍼에서 제거
+			expr[index] = '\0'; // 변경된 수식 끝 표시
 			
-			lcd_write_command(0x10);	//커서 앞으로 두 칸
+			lcd_write_command(0x10); // 방금 표시한 공백 위치로 이동
 			_delay_us(50);
 			lcd_write_command(0x10);
 			_delay_us(50);
 			
-			lcd_write_data(' ');		//공백으로 덮어서 잔상 없애기
+			lcd_write_data(' '); // LCD에 남은 직전 문자를 지움
 			_delay_us(50);
 			
-			lcd_write_command(0x10);	//다시 커서 앞으로 한 칸
+			lcd_write_command(0x10); // 다음 입력을 삭제 위치에 표시
 			_delay_us(50);
 		}
 		else
-		{	//버퍼가 비어있을 때
+		{ // 삭제할 문자가 없을 때
 			index = 0;
 			expr[0] = '\0';
-			lcd_write_command(0x10);	//입력한 공백 전으로 커서 이동
+			lcd_write_command(0x10); // 표시한 공백 이전으로 커서 복귀
 			_delay_us(50);
 		}
 		return;
 	}
 	
-	if(key_val == 'c')	//2번 버튼 누르면 화면 클리어
+	if(key_val == 'c') // 계산기 모드의 BTN2: 수식과 화면 초기화
 	{
 		index = 0;
 		expr[0] = '\0';
@@ -59,7 +59,7 @@ void save_equation(uint8_t key_val)	//배열에 식을 저장
 	
 	if(key_val == '=')
 	{
-		expr[index] = '\0';		//마지막 인덱스에 null삽입
+		expr[index] = '\0'; // 수식을 문자열로 종료
 		
 		if (parsing(expr))
 		{
@@ -93,7 +93,7 @@ void save_equation(uint8_t key_val)	//배열에 식을 저장
 	
 }
 
-char **trans(stack* s, char* expr)  //식을 후위표기법으로 변환
+char **trans(stack* s, char* expr) // 중위 수식을 후위 표기 토큰 배열로 변환
 {  
 	char** res_arr = (char**)calloc(200, sizeof(char*));
 	if (res_arr == NULL) return NULL;
@@ -105,8 +105,8 @@ char **trans(stack* s, char* expr)  //식을 후위표기법으로 변환
 		
 		if(expr[i] == '=') break;
 		
-		//연속된 숫자를 하나의 문자열로 묶기
-		if(isdigit(expr[i]))		//isdigit: 숫자가 아니면 0 반환.
+		// 연속된 숫자를 하나의 토큰으로 묶는다.
+		if(isdigit(expr[i]))
 		{
 			char* num = (char*)malloc((size_t)len + 1);
 			if (num == NULL) goto allocation_failed;
@@ -120,18 +120,17 @@ char **trans(stack* s, char* expr)  //식을 후위표기법으로 변환
 			res_arr[res_idx++] = num;
 		}
 		
-		char* op = (char*)malloc(sizeof(char) * 2);	//읽은 연산자 문자를 독립된 문자열로 새로 포장
+		char* op = (char*)malloc(sizeof(char) * 2); // 연산자/괄호용 단일 문자 토큰
 		if (op == NULL) goto allocation_failed;
 		op[0] = expr[i];
 		op[1] = '\0';
 		
-		//읽은 문자가 연산자일 때.
+		// 스택의 우선순위가 같거나 높은 연산자를 먼저 출력한다.
 		if (expr[i] == '+' || expr[i] == '-' || expr[i] == '*' || expr[i] == '/')
 		{ 
-			//스택이 비어있지 않고 스택 안 연산자의 우선운위가 같거나 높은 경우
 			while (s->top >= 0 && getPriority(s->data[s->top][0]) >= getPriority(expr[i])) 
 			{
-				res_arr[res_idx++] = pop(s);	//스택 안 연산자를 pop	
+				res_arr[res_idx++] = pop(s);
 			}
 			push(s, op);		//현재 연산자를 push
 
@@ -146,9 +145,9 @@ char **trans(stack* s, char* expr)  //식을 후위표기법으로 변환
 			{
 				res_arr[res_idx++] = pop(s);
 			}
-			char* open_paren = pop(s); // 스택에 있던 '(' 꺼내서
-			free(open_paren);          // 메모리 해제
-			free(op);                  // 사용 안 한 현재 ')'의 op도 해제
+			char* open_paren = pop(s); // '('는 결과 토큰에 넣지 않는다.
+			free(open_paren);
+			free(op); // ')' 토큰도 사용하지 않는다.
 		}
 		else
 		{
@@ -156,23 +155,24 @@ char **trans(stack* s, char* expr)  //식을 후위표기법으로 변환
 		}
 		i++;
 	}
-	//문자열을 모두 읽고 스택에 남은 연산자 pop
+	// 남은 연산자를 후위 표기 배열에 추가한다.
 	while (is_empty(s) != 1) 
 	{
 		res_arr[res_idx++] = pop(s);
 	}
 	
-	res_arr[res_idx] = NULL;	//끝자리에 null 지정
+	res_arr[res_idx] = NULL; // 토큰 배열의 종료 표시
 	return res_arr;
 
 allocation_failed:
+	// 변환 중 할당한 토큰과 배열을 모두 해제한다.
 	while (!is_empty(s)) free(pop(s));
 	for (int j = 0; j < res_idx; j++) free(res_arr[j]);
 	free(res_arr);
 	return NULL;
 }
 
-char *calculate(stack* s, char** postfix) 
+char *calculate(stack* s, char** postfix) // 후위 표기 수식을 계산하고 결과 문자열 반환
 {
 	int num_stackarr[100];
 	int num_top = -1;
@@ -262,7 +262,7 @@ char* pop(stack* s)
 	return temp;
 }
 
-int getPriority(char op) //연산자 우선순위
+int getPriority(char op) // 숫자가 클수록 연산 우선순위가 높다.
 {
 	if (op == '*' || op == '/') return 2;
 	if (op == '+' || op == '-') return 1;
@@ -272,6 +272,7 @@ int getPriority(char op) //연산자 우선순위
 
 int parsing(char *buff)
 {
+	// 괄호가 닫히는 순서와 개수만 검사한다.
 	int count = 0;
 	for (int i = 0; buff[i] != '\0'; i++)
 	{
@@ -280,68 +281,3 @@ int parsing(char *buff)
 	}
 	return count != 0;
 }
-
-#if 0
-
-void save_equation(uint8_t key_val);
-void cal_res(void);
-
-static char eq[32];
-static int index = 0;
-
-void save_equation(uint8_t key_val)	//배열에 식을 저장
-{
-		eq[index++] = key_val;
-		if(key_val == '=')	cal_res(); 
-		else printf("%c", key_val);
-}
-
-void cal_res(void)	// '='이 입력되면 호출해서 결과 계산, 출력
-{
-	char op = 0;
-	char *pop = NULL;
-	int res = 0;
-	
-	if(pop = strchr(eq, '+')) {
-		op = '+';
-	}
-	else if(pop = strchr(eq, '-')) {
-		op = '-';
-	}
-	else if(pop = strchr(eq, '*')) {
-		op = '*';
-	}
-	else if(pop = strchr(eq, '/')) {
-		op = '/';
-	}
-	
-	if(*pop == NULL){
-		printf("잘못된 수식입니다.\n");
-		index = 0;
-		eq[0] = '\0';
-		return;
-	}
-	
-	*pop = '\0';
-	
-	int num1 = atoi(eq);
-	int num2 = atoi(pop + 1);
-	
-	switch(op)
-	{
-		case '+': res = num1 + num2;
-		break;
-		case '-': res = num1 - num2;
-		break;
-		case '*': res = num1 * num2;
-		break;
-		case '/': res = num1 / num2;
-		break;	
-	}
-	
-	printf("=%d \n", res);
-	
-	index = 0;
-	eq[0] = 0;	
-}
-#endif
